@@ -18,6 +18,13 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
+############
+# Simulation parameters
+############
+numdata = 100
+noisevar = 0.1
+batchsize = 20
+epochs = 10000
 
 class Net(nn.Module):
     def __init__(self):
@@ -32,12 +39,20 @@ class Net(nn.Module):
 
     def forward(self, x):
         # Propagate through hidden linear layer together with relu activation
-        x = F.relu(self.hidden1(x))
+        #out1 = F.relu(self.hidden1(x))
+        out1 = F.sigmoid(self.hidden1(x))
+        #out1 = F.tanh(self.hidden1(x))
         # Propagate through output linear layer together with thr activation
-        x = F.sigmoid(self.output(x))
-        torch.nn.Threshold
-        return x
+        out2 = F.sigmoid(self.output(out1))
+        return out2
 
+def plot_separating_curve(net):
+	points = np.array([(i, j) for i in np.linspace(0,1,100) for j in np.linspace(0,1,100)])
+	outputs = net(Variable(torch.FloatTensor(points)))
+	outlabels = outputs > 0.5
+	plt.scatter(points[:,0], points[:,1], c=outlabels.data.numpy(), alpha=0.5)
+	plt.title('Decision areas')
+	plt.show()
 
 # Create the network object
 net = Net()
@@ -54,24 +69,24 @@ optimizer = optim.SGD(net.parameters(), lr=0.01)
 import numpy as np
 import torch
 
-train00 = np.tile( np.array([0, 0]), (100,1) ) + 0.1 * np.random.rand(100,2)
-train01 = np.tile( np.array([0, 1]), (100,1) ) + 0.1 * np.random.rand(100,2)
-train10 = np.tile( np.array([1, 0]), (100,1) ) + 0.1 * np.random.rand(100,2)
-train11 = np.tile( np.array([1, 1]), (100,1) ) + 0.1 * np.random.rand(100,2)
+train00 = np.tile( np.array([0, 0]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
+train01 = np.tile( np.array([0, 1]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
+train10 = np.tile( np.array([1, 0]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
+train11 = np.tile( np.array([1, 1]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
 
-test00 = np.tile( np.array([0, 0]), (100,1) ) + 0.1 * np.random.rand(100,2)
-test01 = np.tile( np.array([0, 1]), (100,1) ) + 0.1 * np.random.rand(100,2)
-test10 = np.tile( np.array([1, 0]), (100,1) ) + 0.1 * np.random.rand(100,2)
-test11 = np.tile( np.array([1, 1]), (100,1) ) + 0.1 * np.random.rand(100,2)
+test00 = np.tile( np.array([0, 0]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
+test01 = np.tile( np.array([0, 1]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
+test10 = np.tile( np.array([1, 0]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
+test11 = np.tile( np.array([1, 1]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
 
 #label00 = np.zeros((100,1), dtype=int)
 #label01 = np.ones((100,1), dtype=int)
 #label10 = np.ones((100,1), dtype=int)
 #label11 = np.zeros((100,1), dtype=int)
-label00 = np.zeros((100,1))
-label01 = np.ones((100,1))
-label10 = np.ones((100,1))
-label11 = np.zeros((100,1))
+label00 = np.zeros((numdata,1))
+label01 = np.ones((numdata,1))
+label10 = np.ones((numdata,1))
+label11 = np.zeros((numdata,1))
 
 # Concatenate and change datatype to float
 trainset = np.array(np.vstack((train00, train01, train10, train11)), dtype=np.float32)
@@ -80,7 +95,7 @@ labels = np.vstack((label00, label01, label10, label11))
 
 #dataset = torch.utils.data.TensorDataset(torch.FloatTensor(trainset), torch.LongTensor(labels))
 dataset = torch.utils.data.TensorDataset(torch.FloatTensor(trainset), torch.FloatTensor(labels))
-trainloader = torch.utils.data.DataLoader(dataset, batch_size=20, shuffle=True, num_workers=1)
+trainloader = torch.utils.data.DataLoader(dataset, batch_size=batchsize, shuffle=True, num_workers=1)
 
 
 #============
@@ -92,19 +107,14 @@ plt.show()
 #============
 # Plot the classification decisions before the training
 #============
-varinputs = Variable(torch.FloatTensor(trainset))
-outputs = net(varinputs)
-classes = (outputs > 0.5)
-plt.scatter(trainset[:,0], trainset[:,1], c=classes.data.numpy())
-plt.show()
-
+plot_separating_curve(net)
 
 
 #============
 # Training
 #============
 
-for epoch in range(20):  # loop over the dataset multiple times
+for epoch in range(epochs):  # loop over the dataset multiple times
 
     running_loss = 0.0
     for i, data in enumerate(trainloader, 0):
@@ -118,7 +128,7 @@ for epoch in range(20):  # loop over the dataset multiple times
         #tensor_labels = labels.float()
         
     
-        # zero  0.476the parameter gradients
+        # zero the parameter gradients
         optimizer.zero_grad()
     
         # forward + backward + optimize
@@ -133,7 +143,8 @@ for epoch in range(20):  # loop over the dataset multiple times
         
         # print statistics
         running_loss += loss.data[0]
-        if i % 20 == 19:    # print every 2000 mini-batches
+        numiter = 4*numdata/batchsize
+        if i % numiter == (numiter-1):    # print every 2000 mini-batches
             print('[%d, %5d] loss: %.3f' %
                   (epoch + 1, i + 1, running_loss / 2000))
             running_loss = 0.0
@@ -144,8 +155,4 @@ print('Finished Training')
 #============
 # Plot the classification decisions after the training
 #============
-varinputs = Variable(torch.FloatTensor(trainset))
-outputs = net(varinputs)
-classes = (outputs > 0.5)
-plt.scatter(trainset[:,0], trainset[:,1], c=classes.data.numpy())
-plt.show()
+plot_separating_curve(net)
