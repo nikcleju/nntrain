@@ -17,36 +17,55 @@ import torch.utils.data
 from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 
-############
+#========================
 # Simulation parameters
-############
+#========================
 numdata = 100
-noisevar = 0.1
-batchsize = 20
-epochs = 10000
+noisevar = 0.2
+batchsize = 50
+epochs = 1000
 
+#========================
+# Define the network
+# Can also be defined as a sequence of predefined layers from torch.nn
+#========================
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         
-        # Define a hidden lineaoutputs.datar layer
-        # The relu function will be applied in forward()
+        # Define the data for 1 hidden layer and 1 output layer
         self.hidden1 =  nn.Linear(2, 2)
-        # Define the output layer
-        # The sigmoid function will be applied in forward()
         self.output =  nn.Linear(2, 1)
 
     def forward(self, x):
-        # Propagate through hidden linear layer together with relu activation
-        #out1 = F.relu(self.hidden1(x))
-        out1 = F.sigmoid(self.hidden1(x))
-        #out1 = F.tanh(self.hidden1(x))
-        # Propagate through output linear layer together with thr activation
-        out2 = F.sigmoid(self.output(out1))
-        return out2
+		# This is where the actual computations are done
+        # We apply the activation functions ourselves here
+        
+        # Propagate inputs through hidden layer and apply activation function
+        x = F.relu(self.hidden1(x))
+        #x = F.sigmoid(self.hidden1(x))
+        #x = F.tanh(self.hidden1(x))
+        
+        # Propagate through output layer and apply activation function
+        x = F.sigmoid(self.output(x))
+        
+        return x
 
+#===================
+# Create the network object
+#===================
+net = Net()
+
+#===================
+# Auxiliary function to visualize the decision areas
+#===================
 def plot_separating_curve(net):
+	"""
+	Function to visualize the decision areas
+	"""
+	
 	points = np.array([(i, j) for i in np.linspace(0,1,100) for j in np.linspace(0,1,100)])
 	outputs = net(Variable(torch.FloatTensor(points)))
 	outlabels = outputs > 0.5
@@ -54,14 +73,12 @@ def plot_separating_curve(net):
 	plt.title('Decision areas')
 	plt.show()
 
-# Create the network object
-net = Net()
-
-# Let's use a Classification Cross-Entropy loss and SGD optimization
-import torch.optim as optim
+#===================
+# Define the loss criterion and optimization algorithm (SGD)
+#===================
 #criterion = nn.CrossEntropyLoss()
-criterion = nn.MSELoss()
-optimizer = optim.SGD(net.parameters(), lr=0.01)
+criterion = nn.MSELoss(size_average=False)
+optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
 #===================
 # Generate the training data
@@ -69,6 +86,7 @@ optimizer = optim.SGD(net.parameters(), lr=0.01)
 import numpy as np
 import torch
 
+# Data is like [0,0] + noise, [0,1] + noise etc
 train00 = np.tile( np.array([0, 0]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
 train01 = np.tile( np.array([0, 1]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
 train10 = np.tile( np.array([1, 0]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
@@ -79,6 +97,7 @@ test01 = np.tile( np.array([0, 1]), (numdata,1) ) + noisevar * np.random.randn(n
 test10 = np.tile( np.array([1, 0]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
 test11 = np.tile( np.array([1, 1]), (numdata,1) ) + noisevar * np.random.randn(numdata,2)
 
+# Labels must be of type float if using MSELoss, type int if using SoftMax (classification)
 #label00 = np.zeros((100,1), dtype=int)
 #label01 = np.ones((100,1), dtype=int)
 #label10 = np.ones((100,1), dtype=int)
@@ -93,66 +112,59 @@ trainset = np.array(np.vstack((train00, train01, train10, train11)), dtype=np.fl
 testset = np.array(np.vstack((test00, test01, test10, test11)), dtype=np.float32)
 labels = np.vstack((label00, label01, label10, label11))
 
+# pytorch specifics: make data as Tensors, make a DataSet, make a DataLoader for easy batch selection
 #dataset = torch.utils.data.TensorDataset(torch.FloatTensor(trainset), torch.LongTensor(labels))
 dataset = torch.utils.data.TensorDataset(torch.FloatTensor(trainset), torch.FloatTensor(labels))
 trainloader = torch.utils.data.DataLoader(dataset, batch_size=batchsize, shuffle=True, num_workers=1)
 
-
-#============
+#===================
 # Plot the training set
-#============
+#===================
 plt.scatter(trainset[:,0], trainset[:,1], c=labels)
 plt.show()
 
-#============
-# Plot the classification decisions before the training
-#============
-plot_separating_curve(net)
+#===================
+# Plot the decisions areas before the training
+# - optional
+#===================
+#plot_separating_curve(net)
 
-
-#============
+#===================
 # Training
-#============
-
-for epoch in range(epochs):  # loop over the dataset multiple times
+#===================
+for epoch in range(epochs):
 
     running_loss = 0.0
+    
+    # DataLoader will provide the batches
     for i, data in enumerate(trainloader, 0):
         
-        tensor_inputs, tensor_labels = data
+        # Current batch, split inputs and labels
+        batch_inputs, batch_labels = data
         
-        # wrap inputs in Variable
-        varinputs, varlabels = Variable(tensor_inputs), Variable(tensor_labels)
-        # convert to flat to avoid errors
-        #tensor_inputs = tensor_inputs.float()
-        #tensor_labels = labels.float()
-        
+        # Wrap inputs in Variable
+        varinputs, varlabels = Variable(batch_inputs), Variable(batch_labels)
     
-        # zero the parameter gradients
+        # Zero the parameter gradients
         optimizer.zero_grad()
     
-        # forward + backward + optimize
+        # Forward pass + backward pass + optimize
         outputs = net(varinputs)
-
-        #plt.scatter(varinputs.data.numpy()[:,0], varinputs.data.numpy()[:,1], c=outputs.data.numpy())
-        #plt.show()
-
         loss = criterion(outputs, varlabels)
         loss.backward()
         optimizer.step()
         
-        # print statistics
+        # Print statistics
         running_loss += loss.data[0]
-        numiter = 4*numdata/batchsize
-        if i % numiter == (numiter-1):    # print every 2000 mini-batches
+        totalnumiter = 4*numdata/batchsize
+        if i % totalnumiter == (totalnumiter-1):    # print after full set
             print('[%d, %5d] loss: %.3f' %
                   (epoch + 1, i + 1, running_loss / 2000))
             running_loss = 0.0
 
 print('Finished Training')
 
-
-#============
-# Plot the classification decisions after the training
-#============
+#===================
+# Plot the decisions areas after the training
+#===================
 plot_separating_curve(net)
